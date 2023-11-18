@@ -110,4 +110,213 @@ logical volume 활성화
 
 마운팅
 > mount /dev/volgroup0/lv_root /mnt
-> mkdir
+> mkdir /mnt/home
+> mount /dev/volgroup0/lv_home /mnt/home
+> mkdir /mnt/etc
+> genfstab -U -p /mnt >> /mnt/etc/fstab
+> cat /mnt/etc/fstab 로 결과 확인
+
+
+다음으로 리눅스 설치를 진행한다.
+
+
+WIFI연결
+wlan 매니저 실행:
+iwctl
+어댑터 찾기:
+device list
+와이파이 검색:
+station wlan0 scan
+검색된 와이파이 보기:
+station wlan0 get-networks
+특정 와이파이에 연결:
+station wlan0 connect 와이파이이름
+quit
+
+Ping으로 연결 테스트
+ping -c 5 8.8.8.8
+
+
+
+아치리눅스 기초패키지 설치
+pacstrap -i /mnt base
+
+root디렉터리를 실제 하드디스크로 변경
+arch-chroot /mnt
+
+리눅스 설치:
+>>pacman -S linux linux-headers linux-firmware
+(linux-lts를 설치해도 되지만 rtx 3060드라이버와 충돌현상이 있는 듯함)
+->만일 이 과정에서 PGP관련 에러가 뜬다면
+>> pacman-key --init
+>> pacman-key --populate archlinux
+를 실행한후 다시 하면 된다.
+
+WIFI관련 패키지 설치
+>> pacman -S networkmanager wpa_supplicant wireless_tools netctl
+>> systemctl enable NetworkManager
+
+LVM 파티션 지원 추가
+>> pacman -S lvm2
+![WIN_20231117_23_17_44_Pro](https://github.com/CodeHotel/Thinkpad-Arch/assets/89632518/030611ce-bba0-4bde-9842-c788bba681aa)
+/etc/mkinitcpio.conf 파일의 HOOKS에 block과 filesystems사이 lvm2 추가
+설정 적용
+>> mkinitcpio -p linux
+
+
+지역 설정
+/etc/locale.gen 파일
+#ko_KR.UTF-8 UTF-8 에서 # 지우기
+적용:
+>>locale-gen
+
+
+root유저 패스워드 설정
+>>passwd
+사용자 추가
+>>useradd -m -g users -G wheel 유저네임
+>>passwd 유저네임
+
+sudo설치
+>>pacman -S sudo
+
+사용자 권한 부여
+>>EDITOR=vim visudo
+![image](https://github.com/CodeHotel/Thinkpad-Arch/assets/89632518/1db2ed4d-4fd4-464a-8f78-a6cb7ce3bc96)
+wheel라인 # 삭제 후 저장
+
+
+*GRUB설치*
+>>pacman -S grub efibootmgr dosfstools os-prober mtools
+>>mkdir /boot/EFI
+>>mount /dev/nvme0n1p1 /boot/EFI
+>>grub-install --target=x86_64-efi --bootloader-id=grub_uefi --recheck
+
+>>ls -l /boot/grub/locale
+존재하지 않는다면
+>>mkdir /boot/grub/locale
+
+>>cp /usr/share/locale/en\@quot/LC_MESSAGES/grub.mo /boot/grub/locale/en.mo
+>>grub-mkconfig -o /boot/grub/grub.cfg
+
+
+재부팅
+>>exit
+>>reboot(혹은 shutdown)
+
+이 때 shutdown후 usb를 제거하고 다시 전원을 켜도 정상적으로 부팅이 되어야 함.
+
+
+시간설정
+>>sudo timedatectl list-timezones
+한국은 Asia-Seoul임
+>>sudo timedatectl set-timezone Asia/Seoul
+>>sudo systemctl enable systemd-timesyncd
+
+기기 이름 설정
+>>hostnamectl set-hostname 기기이름
+/etc/hosts 파일 설정
+>>sudo vim /etc/hosts
+
+127.0.0.1 localhost
+127.0.1.1 기기이름
+추가 후 저장
+
+다시 wifi에 연결
+>>nmcli device wifi list
+>>nmcli device wifi connect iptime(실제 이름으로 대체) password 비밀번호
+
+ucode설치
+>>sudo pacman -S intel-ucode
+
+pacman.conf에서 multilib 허용
+/etc/pacman.conf
+[multilib]
+Include = /etc/pacman.d/mirrorlist
+코멘트 해제
+
+내장그래픽 드라이버 설치
+>>sudo pacman -S mesa mesa-demos mesa-utils lib32-mesa (인텔 내장그래픽)
+사운드 드라이버 설치
+>>sudo pacman -S alsa-utils alsa-plugins alsa-lib alsa-firmware sof-firmware
+>>echo "options snd-intel-dspcfg dsp_driver=1" | sudo tee -a /etc/modprobe.d/alsa-base.conf (펌웨어 버그 때문에 다운그레이드시켜야함)
+>>alsamixer 에서 사운드카드 인식되는지 확인(f6 후 선택, 이후 볼륨설정)
+>>speaker-test -c 2 -t wav 로 테스트
+
+**설치 중 오류가 뜬다면 rm /var/lib/pacman/db.lck 실행
+
+nvidia 드라이버 설치
+>>sudo pacman -S nvidia nvidia-prime nvidia-settings nvidia-utils
+
+배터리 절약 기능
+>>sudo pacman -S tlp
+>>sudo systemctl enable --now tlp
+
+GUI 설치
+xorg 설치
+>>sudo pacman -S xorg-server xorg-xinit xorg-xrandr xorg-xev
+
+i3 설치
+>> sudo pacman -S i3
+>> 전부 설치
+>> noto-fonts 선택
+
+alacritty 설치
+>>sudo pacman -S alacritty
+>>export TERMINAL=alacritty
+
+GUI정상작동확인
+>>echo "exec i3" >> ~/.xinitrc
+>>startx 실행하여 UI환경이 실행되는지 확인
+>>nvidia-smi 실행하여 오직 Xorg만 딱 4MiB만큼만 실행중인지 확인
+
+해상도 설정
+>>xrandr 로 가능한 해상도와 현재 디스플레이 장치 확인
+>>xrandr --output eDP-1 --mode 1920x1080 로 해상도 바르게 설정(eDP-1이 아닌 다른 디스플레이 장치일 경우 선택)
+
+밝기 설정
+>>sudo pacman -S brightnessctl
+>>brightnessctl s 20%+
+>>brightnessctl s 20%- 로 확인
+
+fn 밝기/사운드키 테스트
+>>~/.config/i3/config 파일 복사 덮어씌우기
+
+블루투스 설치
+>>sudo pacman -S pulseaudio-bluetooth bluez blueman
+
+Arch 오우너의 필수템 neofetch설치
+>>sudo pacman -S neofetch
+
+yay설치
+>>pacman -S --needed git base-devel
+>>cd /opt/
+>>sudo git clone https://aur.archlinux.org/yay.git
+>>sudo chown -R 유저네임 yay
+>>cd yay
+>>makepkg -si
+
+브라우저와 Jetbrains 설치
+>>yay -S google-chrome
+>>yay -S jetbrains-toolbox
+>>jetbrains-toolbox & disown
+>>툴박스에서 intelliJ 설치
+
+한글 입출력 설정
+*Arch 공식 위키에서도 UIM Byeoru를 권장하고 있으나, IntelliJ와 호환이 잘 되지 않는 것 같아 fcitx를 사용하겠음*
+>>sudo pacman -S noto-fonts-cjk fcitx5 fcitx5-hangul fcitx5-gtk fcitx5-qt fcitx5-config-qt
+>>fcitx5 &
+상태바 우클릭 -> 왼쪽에 Hangul English 키보드가 모두 있도록 설정 -> Global Options에서 한영키로 세팅(Ralt)
+구글크롬에서 제대로 되는지 확인
+
+한영키를 Switch_mode로 매핑
+>>echo "keycode 108 = Mode_switch" > ~/.Xmodmap
+
+~/.xinitrc 파일을 다음과 같이 설정
+export GTK_IM_MODULE=fcitx5
+export QT_IM_MODULE=fcitx5
+export XMODIFIERS=@im=fcitx5
+exec i3
+
+*이 세줄은 exec i3전에 와야 하며, fcitx가 아닌 fcitx5로 쓰는것이 중요함.*
+
